@@ -504,7 +504,7 @@ def do_addurl_command(credential_manager, args):
 
     type_ = validate_type(parts.netloc)
 
-    label = urllib.unquote(parts.path)
+    label = urllib.parse.unquote(parts.path)
     if label and label.startswith('/'):
         label = label[1:]
     if not label:
@@ -531,7 +531,7 @@ def do_addurl_command(credential_manager, args):
     elif type_ == 'hotp':
         validators['counter'] = validate_counter
     params = {}
-    for key, values in query_params:
+    for key, values in query_params.items():
         if key in validators:
             if len(values) > 1:
                 logger.warning("Multiple values for parameter: %r", key)
@@ -570,7 +570,7 @@ def do_delete_command(credential_manager, args):
 
 def do_list_command(credential_manager, args):
     """Perform list command."""
-    metadata_list =  credential_manager.get_all_metadata()
+    metadata_list = credential_manager.get_all_metadata()
     if args.table:
         # TODO: Nicer table?
         print('\t'.join(name.capitalize()
