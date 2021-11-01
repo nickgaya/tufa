@@ -292,7 +292,7 @@ def create_parser():
 
     parser.add_argument('--debug', '-d', action='store_true', help="Enable "
                         "debug logging")
-    parser.add_argument('--db-path', '-p', help="Path to metadata db file")
+    parser.add_argument('--db-path', '-p', help="Path to the metadata db file")
 
     subparsers = parser.add_subparsers(required=True, dest='command')
     init_add_parser(subparsers.add_parser(
@@ -486,7 +486,7 @@ def do_add_command(credential_manager, args):
         algorithm=validate_algorithm(args.algorithm),
         digits=validate_digits(args.digits),
         **params,
-        keychain=args.keychain or os.environ.get('TWOFA_DEFAULT_KEYCHAIN'),
+        keychain=args.keychain,
         update=args.update)
 
 
@@ -549,7 +549,7 @@ def do_addurl_command(credential_manager, args):
         type_=type_,
         label=label,
         **params,
-        keychain=args.keychain or os.environ.get('TWOFA_DEFAULT_KEYCHAIN'),
+        keychain=args.keychain,
         update=args.update)
 
 
