@@ -46,6 +46,10 @@ class KeychainError(TwofaError):
 
 ### OTP generation
 
+def decode_secret(secret):
+    return base64.b32decode(secret + '=' * (-len(secret) % 8))
+
+
 def get_otp(secret, value, algorithm=None, digits=None):
     """
     Generate an OTP from the given parameters.
@@ -56,7 +60,7 @@ def get_otp(secret, value, algorithm=None, digits=None):
     """
     algorithm = algorithm or 'SHA1'
     digits = digits or 6
-    secret_bytes = base64.b32decode(secret)
+    secret_bytes = decode_secret(secret)
     counter_bytes = struct.pack('>q', value)
     hmac_bytes = hmac.digest(secret_bytes, counter_bytes, algorithm)
     offset = hmac_bytes[19] & 0xf
@@ -388,10 +392,10 @@ def validate_type(type_):
 
 def validate_secret(input_secret):
     """Validate and normalize a base32 secret from user input."""
-    trans = str.maketrans(string.ascii_lowercase, string.ascii_uppercase, '- ')
+    trans = str.maketrans(string.ascii_lowercase, string.ascii_uppercase, '- =')
     secret = input_secret.translate(trans)
     try:
-        base64.b32decode(secret)
+        decode_secret(secret)
     except (binascii.Error, ValueError) as e:
         raise ValidationError("Secret must be a valid base32-encoded string") \
              from e
