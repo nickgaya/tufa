@@ -454,6 +454,26 @@ def validate_period(period):
     return period
 
 
+def validate_keychain(keychain):
+    if not keychain:
+        return None
+    # If the keychain supplied to add-generic-password is not found, the
+    # security command silently adds the password to the default keychain.
+    # We use the show-keychain-info command to verify that the specified
+    # keychain actually exists.
+    result = run_command(['security', 'show-keychain-info', keychain],
+                         stdout=subprocess.DEVNULL)
+    if result.returncode:
+        error = ValidationError(f"Unable to access keychain {keychain!r}")
+        if '/' not in keychain:
+            suggestion = os.path.expanduser(
+                f'~/Library/Keychains/{keychain}.keychain-db')
+            if os.path.exists(suggestion):
+                error.info = f"Try --keychain {shlex.quote(suggestion)}"
+        raise error
+    return keychain
+
+
 ### Command execution
 
 def get_db_path(path):
@@ -498,7 +518,7 @@ def do_add_command(credential_manager, args):
         algorithm=validate_algorithm(args.algorithm),
         digits=validate_digits(args.digits),
         **params,
-        keychain=args.keychain,
+        keychain=validate_keychain(args.keychain),
         update=args.update)
 
 
@@ -561,7 +581,7 @@ def do_addurl_command(credential_manager, args):
         type_=type_,
         label=label,
         **params,
-        keychain=args.keychain,
+        keychain=validate_keychain(args.keychain),
         update=args.update)
 
 
