@@ -4,13 +4,16 @@ import getpass
 import hmac
 import logging
 import os
+import os.path
 import sqlite3
 import string
 import struct
 import subprocess
 import sys
 import time
+import urllib.parse
 from argparse import ArgumentParser
+from collections import namedtuple
 
 logger = logging.getLogger('twofa')
 
@@ -19,10 +22,8 @@ logger = logging.getLogger('twofa')
 
 class TwofaError(Exception):
     """Base exception type for this script."""
-
-
-class KeychainError(TwofaError):
-    """"Exception type for errors interacting with Mac OS keychain."""
+    rc = 1  # Return code for this error
+    info = None  # Extra info to log for this error
 
 
 class UserError(TwofaError):
@@ -31,10 +32,16 @@ class UserError(TwofaError):
 
 class CredentialExistsError(UserError):
     """Exception type when the user attempts to add an existing credential."""
+    info = "Use --update to replace existing value."
 
 
 class ValidationError(UserError):
     """Exception type used to indicate invalid user input."""
+
+
+class KeychainError(TwofaError):
+    """"Exception type for errors interacting with Mac OS keychain."""
+    rc = 2
 
 
 ### OTP generation
@@ -96,19 +103,40 @@ class SecretStore:
 
     def retrieve_secret(self, name, keychain=None):
         """Retrieve the secret for the given credential name."""
-        raise NotImplementedError()
+        command = ['security', 'find-generic-password',
+                   '-s', 'twofa', '-a', name, '-w']
+        if keychain:
+            command.append(keychain)
+        result = subprocess.run(command, stdout=subprocess.PIPE)
+        logger.debug("security find-generic-password rc: %d",
+                     result.returncode)
+        if result.returncode:
+            raise KeychainError("Failed to retrieve secret from keychain")
+        return result.stdout.decode('ascii').strip()
 
     def delete_secret(self, name, keychain=None):
         """Delete the secret for the given credential name."""
-        raise NotImplementedError()
+        command = ['security', 'delete-generic-password',
+                   '-s', 'twofa', '-a', name]
+        if keychain:
+            command.append(keychain)
+        result = subprocess.run(command, stdout=subprocess.DEVNULL)
+        logger.debug("security delete-generic-password rc: %d",
+                     result.returncode)
+        if result.returncode:
+            raise KeychainError("Failed to delete secret from keychain")
+
+
+CredentialMetadata = namedtuple(
+    'CredentialMetadata', ('name', 'type', 'label', 'issuer', 'algorithm',
+                           'digits', 'period', 'counter', 'keychain'))
 
 
 class MetadataStore:
     """Class for storing and retrieving credential metadata."""
 
-    def __init__(self, filename):
-        self.connection = sqlite3.connect(filename)
-        self.connection.row_factory = sqlite3.Row
+    def __init__(self, db_path):
+        self.connection = sqlite3.connect(db_path)
         self._create_table()
 
     def _create_table(self):
@@ -126,31 +154,28 @@ class MetadataStore:
             )
         """)
 
-    def store_metadata(self, name, otp_type, label=None, issuer=None,
-                       algorithm=None, digits=None, period=None, counter=None,
-                       keychain=None, update=False):
+    def store_metadata(self, metadata, update=False):
         """Store metadata for the given credential."""
         operation = 'REPLACE' if update else 'INSERT'
         with self.connection:
             self.connection.execute(
                 f"{operation} INTO twofa_metadata (name, type, label, issuer, "
                 "algorithm, digits, period, counter, keychain) VALUES (?, ?, "
-                "?, ?, ?, ?, ?, ?, ?)",
-                (name, otp_type, label, issuer, algorithm, digits, period,
-                 counter, keychain))
+                "?, ?, ?, ?, ?, ?, ?)", metadata)
 
     def retrieve_metadata(self, name):
         """Retrieve metadata for the given credential."""
-        return self.connection.execute(
+        row = self.connection.execute(
             "SELECT name, type, label, issuer, algorithm, digits, period, "
             "counter, keychain FROM twofa_metadata WHERE name = ?",
             (name,)).fetchone()
+        return CredentialMetadata(*row) if row else None
 
     def retrieve_all_metadata(self):
         """Retrieve metadata for all credentials."""
-        return self.connection.execute(
+        return [CredentialMetadata(*row) for row in self.connection.execute(
             "SELECT name, type, label, issuer, algorithm, digits, period, "
-            "counter, keychain FROM twofa_metadata").fetchall()
+            "counter, keychain FROM twofa_metadata")]
 
     def increment_hotp_counter(self, name):
         """Increment the counter for the given HOTP credential."""
@@ -166,6 +191,7 @@ class MetadataStore:
                 "DELETE FROM twofa_metadata WHERE name = ?", (name,)).rowcount
 
     def close(self):
+        """Close the underlying db connection."""
         self.connection.close()
 
 
@@ -178,40 +204,82 @@ class CredentialManager:
         self.secret_store = secret_store
         self.metadata_store = metadata_store
 
-    def add_credential(self, name, otp_type, secret, label=None, issuer=None,
+    def add_credential(self, name, type_, secret, label=None, issuer=None,
                        algorithm=None, digits=None, period=None, counter=None,
                        keychain=None, update=False):
         """Persist a credential."""
         if not update and self.metadata_store.retrieve_metadata(name):
             raise CredentialExistsError(
                 f"Found existing credential with name {name!r}.")
-        self.metadata_store.store_metadata(
+        metadata = CredentialMetadata(
             name=name,
-            otp_type=otp_type,
-            label=label, issuer=issuer,
-            algorithm=algorithm, digits=digits,
-            period=period, counter=counter,
-            keychain=keychain, update=update)
+            type=type_,
+            label=label,
+            issuer=issuer,
+            algorithm=algorithm,
+            digits=digits,
+            period=period,
+            counter=counter,
+            keychain=keychain,
+        )
+        self.metadata_store.store_metadata(metadata, update=update)
         self.secret_store.store_secret(name, secret, keychain, update)
 
+    def _get_credential(self, name):
+        """Get credential metadata and secret."""
+        metadata = self.metadata_store.retrieve_metadata(name)
+        if not metadata:
+            raise UserError(f"No credential found with name {name!r}")
+        secret = self.secret_store.retrieve_secret(
+            name, keychain=metadata.keychain)
+        return metadata, secret
+
     def get_otp(self, name):
-        """Get an OTP for the given credential."""
-        raise NotImplementedError()
+        """
+        Get a one-time password for the given credential.
+
+        If the credential is of type HOTP, increment the counter.
+        """
+        metadata, secret = self._get_credential(name)
+        if metadata.type == 'totp':
+            return get_totp(secret, metadata.period,
+                            metadata.algorithm, metadata.digits)
+        elif metadata.type == 'hotp':
+            otp = get_otp(secret, metadata.counter,
+                          metadata.algorithm, metadata.digits)
+            self.metadata_store.increment_hotp_counter(name)
+            return otp
+        else:
+            raise ValueError(f"Invalid metadata type: {metadata.type!r}")
 
     def get_url(self, name):
         """Get an otpauth URL for the given credential."""
-        raise NotImplementedError()
+        metadata, secret = self._get_credential(name)
+        label = urllib.parse.quote(metadata.label or metadata.name)
+        params = {
+            'secret': secret,
+        }
+        for key, value in (('issuer', metadata.issuer),
+                           ('algorithm', metadata.algorithm),
+                           ('digits', metadata.digits),
+                           ('period', metadata.period),
+                           ('counter', metadata.counter)):
+            if value is not None:
+                params[key] = str(value)
+        qs = urllib.parse.urlencode(params, quote_via=urllib.parse.quote)
+        return f'otpauth://{metadata.type}/{label}?{qs}'
 
-    def delete(self, name):
+    def delete_credential(self, name):
         """Delete the given credential."""
-        raise NotImplementedError()
+        metadata = self.metadata_store.retrieve_metadata(name)
+        if not metadata:
+            raise UserError(f"No credential found with name {name!r}")
+        self.metadata_store.delete_metadata(name)
+        self.secret_store.delete_secret(name, keychain=metadata.keychain)
 
     def get_all_metadata(self):
         """Retrieve metadata for all credentials."""
-        raise NotImplementedError()
-
-    def close(self):
-        self.metadata_store.close()
+        return self.metadata_store.retrieve_all_metadata()
 
 
 ### Command-line parsing
@@ -227,84 +295,96 @@ def create_parser():
     parser.add_argument('--db-path', '-p', help="Path to metadata db file")
 
     subparsers = parser.add_subparsers(required=True, dest='command')
-    init_add_parser(subparsers)
-    init_addurl_parser(subparsers)
-    init_getotp_parser(subparsers)
-    init_geturl_parser(subparsers)
-    init_delete_parser(subparsers)
-    init_list_parser(subparsers)
+    init_add_parser(subparsers.add_parser(
+        'add', help="Add or update an OTP credential"))
+    init_addurl_parser(subparsers.add_parser(
+        'addurl', help="Add an OTP credential as an otpauth:// URL"))
+    init_getotp_parser(subparsers.add_parser(
+        'getotp', help="Get a one-time password"))
+    init_geturl_parser(subparsers.add_parser(
+        'geturl', help="Generate a otpauth:// URL for a credential"))
+    init_delete_parser(subparsers.add_parser(
+        'delete', help="Delete a credential"))
+    init_list_parser(subparsers.add_parser(
+        'list', help="List credentials"))
 
     return parser
 
 
-def add_name_arg(cmd_parser):
+def add_name_arg(parser):
     """Add common --name argument to the given subparser."""
-    cmd_parser.add_argument('--name', '-n', required=True, help="A name used "
-                            "to uniquely identify the credential")
+    parser.add_argument('--name', '-n', required=True, help="Credential name")
 
 
-def add_add_args(cmd_parser):
+def add_add_args(parser):
     """Add common arguments for adding credentials to the given subparser."""
-    cmd_parser.add_argument('--keychain', '-k', help="Keychain in which to "
-                            "store the secret")
-    cmd_parser.add_argument('--update', '-u', action='store_true',
-                            help="Update an existing credential")
+    parser.add_argument('--keychain', '-k',
+                        help="Keychain in which to store the secret")
+    parser.add_argument('--update', '-u', action='store_true',
+                        help="Update an existing credential")
 
 
-def init_add_parser(subparsers):
+def init_add_parser(parser):
     """Initialize subparser for the add command."""
-    add_parser = subparsers.add_parser('add', help="Add or update an OTP "
-                                       "credential")
-    add_name_arg(add_parser)
-    type_group = add_parser.add_mutually_exclusive_group(required=True)
+    add_name_arg(parser)
+    type_group = parser.add_mutually_exclusive_group(required=True)
     type_group.add_argument('--totp', '-T', dest='type', action='store_const',
                             const='totp', help="Create a TOTP credential")
     type_group.add_argument('--hotp', '-H', dest='type', action='store_const',
                             const='hotp', help="Create an HOTP credential")
-    add_parser.add_argument('--label', '-l', help="Optional value indicating "
-                            "the account the credential is associated with")
-    add_parser.add_argument('--issuer', '-i', help="Optional value indicating "
-                            "the provider or service the credential is "
-                            "associated with")
-    add_parser.add_argument('--algorithm', '-a',
-                            choices=('SHA1', 'SHA256', 'SHA512'),
-                            help="Credential hash digest algorithm")
-    add_parser.add_argument('--digits', '-d', type=int, choices=(6, 7, 8),
-                            help="Number of OTP digits")
-    add_parser.add_argument('--period', '-p', type=int,
-                            help="Validity period  in seconds for a TOTP "
-                            "credential")
-    add_parser.add_argument('--counter', '-c', type=int, help="Initial "
-                            "counter value for an HOTP credential")
-    add_add_args(add_parser)
+    parser.add_argument('--label', '-l', help="The account the credential is "
+                        "associated with")
+    parser.add_argument('--issuer', '-i', help="The provider or service the "
+                        "credential is associated with")
+    parser.add_argument('--algorithm', '-a',
+                        choices=('SHA1', 'SHA256', 'SHA512'),
+                        help="Credential hash digest algorithm (default SHA1)")
+    parser.add_argument('--digits', '-d', type=int, choices=(6, 7, 8),
+                        help="Number of OTP digits (default 6)")
+    parser.add_argument('--period', '-p', type=int,
+                        help="Validity period  in seconds for a TOTP "
+                        "credential (default 30)")
+    parser.add_argument('--counter', '-c', type=int, help="Initial counter "
+                        "value for an HOTP credential (default 0)")
+    add_add_args(parser)
 
 
-def init_addurl_parser(subparsers):
+def init_addurl_parser(parser):
     """Initialize subparser for the addurl command."""
-    pass  # TODO
+    add_name_arg(parser)
+    add_add_args(parser)
 
 
-def init_getotp_parser(subparsers):
+def init_getotp_parser(parser):
     """Initialize subparser for the getotp command."""
-    pass  # TODO
+    add_name_arg(parser)
 
 
-def init_geturl_parser(subparsers):
+def init_geturl_parser(parser):
     """Initialize subparser for the geturl command."""
-    pass  # TODO
+    add_name_arg(parser)
 
 
-def init_delete_parser(subparsers):
+def init_delete_parser(parser):
     """Initialize subparser for the delete command."""
-    pass  # TODO
+    add_name_arg(parser)
 
 
-def init_list_parser(subparsers):
+def init_list_parser(parser):
     """Initialize subparser for the list command."""
-    pass  # TODO
+    parser.add_argument('--table', '-t', action='store_true',
+                        help="Display full metadata in tabular format")
 
 
 ### Input validation
+
+
+def validate_type(type_):
+    """Validate OTP type parameter."""
+    if type_ not in ('totp', 'hotp'):
+        raise ValidationError("Type must be one of: totp, hotp")
+    return type_
+
 
 def validate_secret(input_secret):
     """Validate and normalize a base32 secret from user input."""
@@ -319,6 +399,7 @@ def validate_secret(input_secret):
 
 
 def validate_algorithm(algorithm):
+    """Validate algorithm parameter."""
     if algorithm is None:
         return None
     if algorithm not in ('SHA1', 'SHA256', 'SHA512'):
@@ -327,6 +408,7 @@ def validate_algorithm(algorithm):
 
 
 def validate_digits(digits):
+    """Validate digits parameter."""
     if digits is None:
         return None
     try:
@@ -339,6 +421,7 @@ def validate_digits(digits):
 
 
 def validate_counter(counter):
+    """Validate counter parameter."""
     try:
         counter = int(counter)
     except ValueError as e:
@@ -347,6 +430,7 @@ def validate_counter(counter):
 
 
 def validate_period(period):
+    """Validate period parameter."""
     if period is None:
         return None
     try:
@@ -361,10 +445,11 @@ def validate_period(period):
 ### Command execution
 
 def get_db_path(path):
-    if path is None:
+    """Get metadata database path."""
+    if not path:
         path = os.environ.get('TWOFA_DB_PATH')
-    if path is None:
-        path = os.expanduser("~/.twofa.db")
+    if not path:
+        path = os.path.expanduser("~/.twofa.sqlite3")
     logger.debug("Metadata db path: %r", path)
     return path
 
@@ -378,13 +463,14 @@ def input_secret(prompt):
 
 
 def do_add_command(credential_manager, args):
+    """Perform add command."""
     params = {}
     if args.type == 'totp':
         params['period'] = validate_period(args.period)
         if args.counter is not None:
             logger.warning("Ignoring --counter for TOTP credential")
     elif args.type == 'hotp':
-        params['counter'] = args.counter or 0
+        params['counter'] = validate_counter(args.counter or 0)
         if args.period is not None:
             logger.warning("Ignoring --period for HOTP credential")
     else:
@@ -393,18 +479,111 @@ def do_add_command(credential_manager, args):
     secret = input_secret('Secret: ')
     credential_manager.add_credential(
         name=args.name,
-        otp_type=args.type,
+        type_=args.type,
         secret=validate_secret(secret),
         label=args.label,
         issuer=args.issuer,
         algorithm=validate_algorithm(args.algorithm),
         digits=validate_digits(args.digits),
+        **params,
         keychain=args.keychain or os.environ.get('TWOFA_DEFAULT_KEYCHAIN'),
-        update=args.update,
-        **params)
+        update=args.update)
 
 
-def handle_args(args):
+def do_addurl_command(credential_manager, args):
+    """Perform addurl command."""
+    url = input_secret('URL: ')
+    params = {}
+    try:
+        parts = urllib.parse.urlparse(url)
+    except ValueError as e:
+        raise ValidationError("Malformed URL") from e
+
+    if parts.scheme != 'otpauth':
+        raise ValidationError("URL must have scheme otpauth://")
+
+    type_ = validate_type(parts.netloc)
+
+    label = urllib.unquote(parts.path)
+    if label and label.startswith('/'):
+        label = label[1:]
+    if not label:
+        logger.warning("URL has empty or missing label")
+
+    if parts.params:
+        logger.warning("Ignoring URL path parameters: %r", parts.params)
+    if parts.fragment:
+        logger.warning("Ignoring URL fragment: %r", parts.fragment)
+
+    try:
+        query_params = urllib.parse.parse_qs(parts.query, strict_parsing=True)
+    except ValueError as e:
+        raise ValidationError("Malformed query parameters") from e
+
+    validators = {
+        'secret': validate_secret,
+        'issuer': lambda x: x,
+        'algorithm': validate_algorithm,
+        'digits': validate_digits,
+    }
+    if type_ == 'totp':
+        validators['period'] = validate_period
+    elif type_ == 'hotp':
+        validators['counter'] = validate_counter
+    params = {}
+    for key, values in query_params:
+        if key in validators:
+            if len(values) > 1:
+                logger.warning("Multiple values for parameter: %r", key)
+            params[key] = validators[key](values[0])
+        else:
+            logger.warning("Ignoring unknown query parameter: %r", key)
+    if 'secret' not in params:
+        raise ValidationError("Missing parameter 'secret'")
+    if type_ == 'hotp' and 'counter' not in params:
+        logger.warning("Missing parameter 'counter' for HOTP, defaulting to 0")
+        params['counter'] = 0
+
+    credential_manager.add_credential(
+        name=args.name,
+        type_=type_,
+        label=label,
+        **params,
+        keychain=args.keychain or os.environ.get('TWOFA_DEFAULT_KEYCHAIN'),
+        update=args.update)
+
+
+def do_getotp_command(credential_manager, args):
+    """Perform getotp command."""
+    print(credential_manager.get_otp(args.name))
+
+
+def do_geturl_command(credential_manager, args):
+    """Perform geturl command."""
+    print(credential_manager.get_url(args.name))
+
+
+def do_delete_command(credential_manager, args):
+    """Perform delete command."""
+    credential_manager.delete_credential(args.name)
+
+
+def do_list_command(credential_manager, args):
+    """Perform list command."""
+    metadata_list =  credential_manager.get_all_metadata()
+    if args.table:
+        # TODO: Nicer table?
+        print('\t'.join(name.capitalize()
+                        for name in CredentialMetadata._fields))
+        for metadata in metadata_list:
+            print('\t'.join('' if item is None else str(item)
+                            for item in metadata))
+    else:
+        for metadata in metadata_list:
+            print(metadata.name)
+
+
+def do_command(args):
     """Process parsed args and execute command."""
     secret_store = SecretStore()
     metadata_store = MetadataStore(get_db_path(args.db_path))
@@ -414,15 +593,15 @@ def handle_args(args):
     if command == 'add':
         do_add_command(credential_manager, args)
     elif command == 'addurl':
-        raise NotImplementedError()
+        do_addurl_command(credential_manager, args)
     elif command == 'getotp':
-        raise NotImplementedError()
+        do_getotp_command(credential_manager, args)
     elif command == 'geturl':
-        raise NotImplementedError()
+        do_geturl_command(credential_manager, args)
     elif command == 'delete':
-        raise NotImplementedError()
+        do_delete_command(credential_manager, args)
     elif command == 'list':
-        raise NotImplementedError()
+        do_list_command(credential_manager, args)
     else:
         raise ValueError(f"Invalid command: {args.command!r}")
 
@@ -439,10 +618,10 @@ if __name__ == '__main__':
     args = parser.parse_args()
     init_logging(args)
     try:
-        handle_args(args)
+        do_command(args)
     except TwofaError as e:
         logger.debug("Command failed", exc_info=True)
         logger.error("%s", e)
-        if isinstance(e, CredentialExistsError):
-            logger.info("Use --update to replace existing value.")
-        exit(1)
+        if e.info:
+            logger.info(e.info)
+        exit(e.rc)
