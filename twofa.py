@@ -5,6 +5,7 @@ import hmac
 import logging
 import os
 import os.path
+import shlex
 import sqlite3
 import string
 import struct
@@ -78,6 +79,17 @@ def get_totp(secret, period=None, algorithm=None, digits=None):
 
 ### Persistence layer
 
+def run_command(command, redact=None, **kwargs):
+    """Run a command with logging."""
+    if logger.isEnabledFor(logging.DEBUG):
+        cmd_str = ' '.join('****' if i == redact else shlex.quote(arg)
+                           for i, arg in enumerate(command))
+        logger.debug("Executing: %s", cmd_str)
+    result = subprocess.run(command, **kwargs)
+    logger.debug("Returncode: %d", result.returncode)
+    return result
+
+
 class SecretStore:
     """Class for storing and retrieving secrets in the Mac OS keychain."""
 
@@ -95,13 +107,13 @@ class SecretStore:
                    # the security command does not provide a way to read the
                    # password from stdin non-interactively.
                    '-w', secret]
+        secret_idx = len(command) - 1
         if update:
             command.append('-U')
         if keychain:
             command.append(keychain)
 
-        result = subprocess.run(command)
-        logger.debug("security add-generic-password rc: %d", result.returncode)
+        result = run_command(command, redact=secret_idx)
         if result.returncode:
             raise KeychainError("Failed to save secret to keychain")
 
@@ -111,9 +123,7 @@ class SecretStore:
                    '-s', 'twofa', '-a', name, '-w']
         if keychain:
             command.append(keychain)
-        result = subprocess.run(command, stdout=subprocess.PIPE)
-        logger.debug("security find-generic-password rc: %d",
-                     result.returncode)
+        result = run_command(command, stdout=subprocess.PIPE)
         if result.returncode:
             raise KeychainError("Failed to retrieve secret from keychain")
         return result.stdout.decode('ascii').strip()
@@ -124,9 +134,7 @@ class SecretStore:
                    '-s', 'twofa', '-a', name]
         if keychain:
             command.append(keychain)
-        result = subprocess.run(command, stdout=subprocess.DEVNULL)
-        logger.debug("security delete-generic-password rc: %d",
-                     result.returncode)
+        result = run_command(command, stdout=subprocess.DEVNULL)
         if result.returncode:
             raise KeychainError("Failed to delete secret from keychain")
 
