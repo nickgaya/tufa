@@ -18,6 +18,8 @@ from collections import namedtuple
 
 logger = logging.getLogger('twofa')
 
+_SECURITY = '/usr/bin/security'
+
 
 ### Exceptions
 
@@ -79,64 +81,83 @@ def get_totp(secret, period=None, algorithm=None, digits=None):
 
 ### Persistence layer
 
-def run_command(command, redact=None, **kwargs):
-    """Run a command with logging."""
-    if logger.isEnabledFor(logging.DEBUG):
-        cmd_str = ' '.join('****' if i == redact else shlex.quote(arg)
-                           for i, arg in enumerate(command))
-        logger.debug("Executing: %s", cmd_str)
-    result = subprocess.run(command, **kwargs)
-    logger.debug("Returncode: %d", result.returncode)
-    return result
-
 
 class SecretStore:
     """Class for storing and retrieving secrets in the Mac OS keychain."""
 
+    def _run_command(self, command, args, redact_arg=None, log_stdout=True):
+        """Execute a security command."""
+        cmd_args = [_SECURITY, command, *args]
+        if logger.isEnabledFor(logging.DEBUG):
+            cmd_str = ' '.join(
+                '****' if i-2 == redact_arg else shlex.quote(arg)
+                for i, arg in enumerate(cmd_args))
+            logger.debug("Executing command: %s", cmd_str)
+        result = subprocess.run(cmd_args, stdin=subprocess.DEVNULL,
+                                capture_output=True, text=True,
+                                start_new_session=True)
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("Command returncode: %d", result.returncode)
+            if result.stdout and log_stdout:
+                logger.debug("Command output:\n%s", result.stdout.rstrip('\n'))
+            if result.stderr:
+                logger.debug("Command error output:\n%s",
+                             result.stderr.rstrip('\n'))
+        return result
+
     def store_secret(self, name, secret, keychain=None, update=False):
         """Store a secret for the given credential name."""
-        command = ['security', 'add-generic-password',
-                   # The service and account parameters together uniquely
-                   # identify a keychain item
-                   '-s', 'twofa', '-a', name,
-                   # Additional display parameters shown in Keychain Access
-                   '-l', f'twofa: {name}',
-                   '-D', 'hotp/totp secret',
-                   # XXX: Passing the secret as an argument is not ideal as it
-                   # could theoretically be read from the process table, but
-                   # the security command does not provide a way to read the
-                   # password from stdin non-interactively.
-                   '-w', secret]
-        secret_idx = len(command) - 1
+        args = [
+            # The service and account parameters together uniquely identify a
+            # keychain item
+            '-s', 'twofa', '-a', name,
+            # Additional display parameters shown in Keychain Access
+            '-l', f'twofa: {name}',
+            '-D', 'hotp/totp secret',
+            # XXX: Passing the secret as an argument is not ideal as it could
+            # theoretically be read from the process table, but the security
+            # command does not provide a way to read the password from stdin
+            # non-interactively.
+            '-w', secret,
+        ]
+        secret_idx = len(args) - 1
         if update:
-            command.append('-U')
+            args.append('-U')
         if keychain:
-            command.append(keychain)
+            args.append(keychain)
 
-        result = run_command(command, redact=secret_idx)
+        result = self._run_command(
+            'add-generic-password', args, redact_arg=secret_idx)
         if result.returncode:
             raise KeychainError("Failed to save secret to keychain")
 
     def retrieve_secret(self, name, keychain=None):
         """Retrieve the secret for the given credential name."""
-        command = ['security', 'find-generic-password',
-                   '-s', 'twofa', '-a', name, '-w']
+        args = ['-s', 'twofa', '-a', name, '-w']
         if keychain:
-            command.append(keychain)
-        result = run_command(command, stdout=subprocess.PIPE)
+            args.append(keychain)
+        result = self._run_command(
+            'find-generic-password', args, log_stdout=False)
         if result.returncode:
             raise KeychainError("Failed to retrieve secret from keychain")
-        return result.stdout.decode('ascii').strip()
+        return result.stdout.strip()
 
     def delete_secret(self, name, keychain=None):
         """Delete the secret for the given credential name."""
-        command = ['security', 'delete-generic-password',
-                   '-s', 'twofa', '-a', name]
+        args = ['-s', 'twofa', '-a', name]
         if keychain:
-            command.append(keychain)
-        result = run_command(command, stdout=subprocess.DEVNULL)
+            args.append(keychain)
+        result = self._run_command('delete-generic-password', args)
         if result.returncode:
             raise KeychainError("Failed to delete secret from keychain")
+
+    def verify_keychain(self, keychain):
+        """Check whether the given keychain exists."""
+        # We use the show-keychain-info command to verify that the specified
+        # keychain actually exists. This command will also unlock the given
+        # keychain, prompting the user for a password if necessary.
+        result = self._run_command('show-keychain-info', keychain)
+        return result.returncode == 0
 
 
 CredentialMetadata = namedtuple(
@@ -216,13 +237,31 @@ class CredentialManager:
         self.secret_store = secret_store
         self.metadata_store = metadata_store
 
+    def _check_keychain(self, keychain):
+        if keychain and not self.secret_store.verify_keychain(keychain):
+            error = KeychainError(f"Unable to access keychain {keychain!r}")
+            if '/' not in keychain:
+                suggestion = os.path.expanduser(
+                    f'~/Library/Keychains/{keychain}.keychain-db')
+                if os.path.exists(suggestion):
+                    error.info = f"Try --keychain {shlex.quote(suggestion)}"
+            raise error
+
     def add_credential(self, name, type_, secret, label=None, issuer=None,
                        algorithm=None, digits=None, period=None, counter=None,
                        keychain=None, update=False):
         """Persist a credential."""
+
+        # If the keychain supplied to add-generic-password is not found, the
+        # command silently adds the password to the default keychain. Because
+        # of this, we check for keychain existence before adding a new
+        # credential.
+        self._check_keychain(keychain)
+
         if not update and self.metadata_store.retrieve_metadata(name):
             raise CredentialExistsError(
                 f"Found existing credential with name {name!r}.")
+
         metadata = CredentialMetadata(
             name=name,
             type=type_,
@@ -400,7 +439,8 @@ def validate_type(type_):
 
 def validate_secret(input_secret):
     """Validate and normalize a base32 secret from user input."""
-    trans = str.maketrans(string.ascii_lowercase, string.ascii_uppercase, '- =')
+    trans = str.maketrans(string.ascii_lowercase, string.ascii_uppercase,
+                          '- =')
     secret = input_secret.translate(trans)
     try:
         decode_secret(secret)
@@ -454,26 +494,6 @@ def validate_period(period):
     return period
 
 
-def validate_keychain(keychain):
-    if not keychain:
-        return None
-    # If the keychain supplied to add-generic-password is not found, the
-    # security command silently adds the password to the default keychain.
-    # We use the show-keychain-info command to verify that the specified
-    # keychain actually exists.
-    result = run_command(['security', 'show-keychain-info', keychain],
-                         stdout=subprocess.DEVNULL)
-    if result.returncode:
-        error = ValidationError(f"Unable to access keychain {keychain!r}")
-        if '/' not in keychain:
-            suggestion = os.path.expanduser(
-                f'~/Library/Keychains/{keychain}.keychain-db')
-            if os.path.exists(suggestion):
-                error.info = f"Try --keychain {shlex.quote(suggestion)}"
-        raise error
-    return keychain
-
-
 ### Command execution
 
 def get_db_path(path):
@@ -518,7 +538,7 @@ def do_add_command(credential_manager, args):
         algorithm=validate_algorithm(args.algorithm),
         digits=validate_digits(args.digits),
         **params,
-        keychain=validate_keychain(args.keychain),
+        keychain=args.keychain,
         update=args.update)
 
 
@@ -581,7 +601,7 @@ def do_addurl_command(credential_manager, args):
         type_=type_,
         label=label,
         **params,
-        keychain=validate_keychain(args.keychain),
+        keychain=args.keychain,
         update=args.update)
 
 
