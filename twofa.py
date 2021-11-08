@@ -675,8 +675,10 @@ if __name__ == '__main__':
     try:
         do_command(args)
     except TwofaError as e:
-        logger.debug("Command failed", exc_info=True)
-        logger.error("%s", e)
+        logger.error("%s", e, exc_info=args.debug)
         if e.info:
             logger.info(e.info)
         exit(e.rc)
+    except KeyboardInterrupt:
+        logger.info("Interrupted", exc_info=args.debug)
+        exit(1)
