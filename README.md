@@ -24,6 +24,8 @@ To export a credential you can use the `geturl` command. This example generates
 a QR code for a credential using
 [libqrencode](https://fukuchi.org/works/qrencode/).
 
+    python3 twofa.py geturl --name example | qrencode -o qr.png
+
 For full command-line documentation, see `python3 twofa.py --help`.
 
 ## Configuration
