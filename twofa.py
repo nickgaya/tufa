@@ -156,7 +156,7 @@ class SecretStore:
         # We use the show-keychain-info command to verify that the specified
         # keychain actually exists. This command will also unlock the given
         # keychain, prompting the user for a password if necessary.
-        result = self._run_command('show-keychain-info', keychain)
+        result = self._run_command('show-keychain-info', [keychain])
         return result.returncode == 0
 
 
