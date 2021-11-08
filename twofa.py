@@ -238,14 +238,17 @@ class CredentialManager:
         self.metadata_store = metadata_store
 
     def _check_keychain(self, keychain):
-        if keychain and not self.secret_store.verify_keychain(keychain):
-            error = KeychainError(f"Unable to access keychain {keychain!r}")
-            if '/' not in keychain:
-                suggestion = os.path.expanduser(
-                    f'~/Library/Keychains/{keychain}.keychain-db')
-                if os.path.exists(suggestion):
-                    error.info = f"Try --keychain {shlex.quote(suggestion)}"
-            raise error
+        if not keychain:
+            return
+        if self.secret_store.verify_keychain(keychain):
+            return
+        error = KeychainError(f"Unable to access keychain {keychain!r}")
+        if '/' not in keychain and not keychain.endswith('.keychain'):
+            suggestion = f'{keychain}.keychain'
+            if os.path.exists(os.path.expanduser(
+                    f'~/Library/Keychains/{suggestion}-db')):
+                error.info = f"Try --keychain {shlex.quote(suggestion)}"
+        raise error
 
     def add_credential(self, name, type_, secret, label=None, issuer=None,
                        algorithm=None, digits=None, period=None, counter=None,
