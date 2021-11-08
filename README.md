@@ -1,6 +1,7 @@
 # twofa
 
-A command-line tool for managing TOTP/HOTP secrets using the Mac OS keychain.
+A command-line tool for managing TOTP/HOTP credentials using the Mac OS
+keychain.
 
 ## Usage
 
