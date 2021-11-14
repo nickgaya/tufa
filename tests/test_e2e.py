@@ -133,13 +133,14 @@ def test_add_update(name):
 def test_list(name):
     assert _twofa('list').stdout == ''
 
-    name1 = f'{name}-1'
-    name2 = f'{name}-2'
+    name1 = f'{name}-T'
+    name2 = f'{name}-H'
 
     _twofa('add', '--name', name1, '--totp', input=SECRET)
     _twofa('add', '--name', name2, '--hotp', input=SECRET_2)
 
-    assert _twofa('list').stdout.splitlines() == [name1, name2]
+    # List should be sorted alphabetically
+    assert _twofa('list').stdout.splitlines() == [name2, name1]
 
     _twofa('delete', '--name', name1)
     _twofa('delete', '--name', name2)

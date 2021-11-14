@@ -213,7 +213,7 @@ class MetadataStore:
         """Retrieve metadata for all credentials."""
         return [CredentialMetadata(*row) for row in self.connection.execute(
             "SELECT name, type, label, issuer, algorithm, digits, period, "
-            "counter, keychain FROM twofa_metadata")]
+            "counter, keychain FROM twofa_metadata ORDER BY name")]
 
     def increment_hotp_counter(self, name):
         """Increment the counter for the given HOTP credential."""
