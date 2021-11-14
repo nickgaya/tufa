@@ -21,7 +21,7 @@ logger = logging.getLogger('twofa')
 _SECURITY = '/usr/bin/security'
 
 
-### Exceptions
+# Exceptions
 
 class TwofaError(Exception):
     """Base exception type for this script."""
@@ -47,7 +47,7 @@ class KeychainError(TwofaError):
     rc = 2
 
 
-### OTP generation
+# OTP generation
 
 def decode_secret(secret):
     return base64.b32decode(secret + '=' * (-len(secret) % 8))
@@ -79,8 +79,7 @@ def get_totp(secret, period=None, algorithm=None, digits=None):
     return get_otp(secret, value, algorithm=algorithm, digits=digits)
 
 
-### Persistence layer
-
+# Persistence layer
 
 class SecretStore:
     """Class for storing and retrieving secrets in the Mac OS keychain."""
@@ -228,7 +227,7 @@ class MetadataStore:
         self.connection.close()
 
 
-### High-level operations
+# High-level operations
 
 class CredentialManager:
     """Class to manage 2FA credentials"""
@@ -351,7 +350,7 @@ class CredentialManager:
         return self.metadata_store.retrieve_all_metadata()
 
 
-### Command-line parsing
+# Command-line parsing
 
 def create_parser():
     """Create argument parser for the tool."""
@@ -448,8 +447,7 @@ def init_list_parser(parser):
                         help="Display full metadata in tabular format")
 
 
-### Input validation
-
+# Input validation
 
 def validate_type(type_):
     """Validate OTP type parameter."""
@@ -515,7 +513,7 @@ def validate_period(period):
     return period
 
 
-### Command execution
+# Command execution
 
 def get_db_path(path):
     """Get metadata database path."""
