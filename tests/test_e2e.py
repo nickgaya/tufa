@@ -117,6 +117,24 @@ def test_add_invalid_keychain(name):
     assert name not in _twofa('list').stdout.splitlines()
 
 
+def test_add_keychain_error(test_keychain, name):
+    _run(['/usr/bin/security', 'add-generic-password',
+          '-s', 'twofa', '-a', name, '-w', SECRET, test_keychain])
+
+    with pytest.raises(subprocess.CalledProcessError) as exc_info:
+        _twofa('add', '--name', name, '--totp', input=SECRET_2)
+    assert exc_info.value.returncode == KEYCHAIN_ERROR_RC
+
+    assert name not in _twofa('list').stdout.splitlines()
+
+    _twofa('add', '--name', name, '--totp', '--update', input=SECRET_2)
+
+    result = _twofa('geturl', '--name', name)
+    assert result.stdout == f"otpauth://totp/{name}?secret={SECRET_2}\n"
+
+    _twofa('delete', '--name', name)
+
+
 def test_addurl(name):
     url = f"otpauth://hotp/label?secret={SECRET}&counter=123"
     _twofa('addurl', '-n', name, input=url)

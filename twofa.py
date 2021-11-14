@@ -277,6 +277,7 @@ class CredentialManager:
                     old_metadata.keychain or 'default keychain')
                 self.secret_store.delete_secret(name, old_metadata.keychain)
 
+        self.secret_store.store_secret(name, secret, keychain, update)
         metadata = CredentialMetadata(
             name=name,
             type=type_,
@@ -289,7 +290,6 @@ class CredentialManager:
             keychain=keychain,
         )
         self.metadata_store.store_metadata(metadata, update=update)
-        self.secret_store.store_secret(name, secret, keychain, update)
 
     def _get_credential(self, name):
         """Get credential metadata and secret."""
