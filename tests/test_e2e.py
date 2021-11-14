@@ -82,6 +82,27 @@ def test_add_hotp(name):
     _twofa('delete', '--name', name)
 
 
+def test_add_update(name):
+    _twofa('add', '--name', name, '--totp', input=SECRET)
+
+    result = _twofa('geturl', '--name', name)
+    assert result.stdout == f"otpauth://totp/{name}?secret={SECRET}\n"
+
+    with pytest.raises(subprocess.CalledProcessError) as exc_info:
+        _twofa('add', '--name', name, '--totp', input=SECRET_2)
+    assert exc_info.value.returncode == 2  # CredentialExistsError
+
+    result = _twofa('geturl', '--name', name)
+    assert result.stdout == f"otpauth://totp/{name}?secret={SECRET}\n"
+
+    _twofa('add', '--name', name, '--totp', '--update', input=SECRET_2)
+
+    result = _twofa('geturl', '--name', name)
+    assert result.stdout == f"otpauth://totp/{name}?secret={SECRET_2}\n"
+
+    _twofa('delete', '--name', name)
+
+
 def test_addurl(name):
     url = f"otpauth://hotp/label?secret={SECRET}&counter=123"
     _twofa('addurl', '-n', name, input=url)
@@ -107,27 +128,6 @@ def test_delete_force(test_keychain, name):
     assert exc_info.value.returncode == 4  # KeychainError
 
     _twofa('delete', '--name', name, '--force')
-
-
-def test_add_update(name):
-    _twofa('add', '--name', name, '--totp', input=SECRET)
-
-    result = _twofa('geturl', '--name', name)
-    assert result.stdout == f"otpauth://totp/{name}?secret={SECRET}\n"
-
-    with pytest.raises(subprocess.CalledProcessError) as exc_info:
-        _twofa('add', '--name', name, '--totp', input=SECRET_2)
-    assert exc_info.value.returncode == 2  # CredentialExistsError
-
-    result = _twofa('geturl', '--name', name)
-    assert result.stdout == f"otpauth://totp/{name}?secret={SECRET}\n"
-
-    _twofa('add', '--name', name, '--totp', '--update', input=SECRET_2)
-
-    result = _twofa('geturl', '--name', name)
-    assert result.stdout == f"otpauth://totp/{name}?secret={SECRET_2}\n"
-
-    _twofa('delete', '--name', name)
 
 
 def test_list(name):
