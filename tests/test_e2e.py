@@ -107,6 +107,16 @@ def test_add_update(name):
     _twofa('delete', '--name', name)
 
 
+def test_add_invalid_keychain(name):
+    with pytest.raises(subprocess.CalledProcessError) as exc_info:
+        _twofa('add', '--name', name, '--totp',
+               '--keychain', f'{TEST_DIR}/invalid.keychain', input=SECRET)
+    assert exc_info.value.returncode == KEYCHAIN_ERROR_RC
+
+    # Verify credential not in db
+    assert name not in _twofa('list').stdout.splitlines()
+
+
 def test_addurl(name):
     url = f"otpauth://hotp/label?secret={SECRET}&counter=123"
     _twofa('addurl', '-n', name, input=url)
@@ -132,6 +142,24 @@ def test_get_nonexistent(name):
     assert exc_info.value.returncode == CREDENTIAL_NOT_FOUND_RC
 
 
+def test_get_keychain_error(test_keychain, name):
+    _twofa('add', '--name', name, '--totp', input=SECRET)
+    _run(['/usr/bin/security', 'delete-generic-password',
+          '-s', 'twofa', '-a', name, test_keychain])
+
+    assert name in _twofa('list').stdout.splitlines()
+
+    with pytest.raises(subprocess.CalledProcessError) as exc_info:
+        _twofa('getotp', '--name', name)
+    assert exc_info.value.returncode == KEYCHAIN_ERROR_RC
+
+    with pytest.raises(subprocess.CalledProcessError) as exc_info:
+        _twofa('geturl', '--name', name)
+    assert exc_info.value.returncode == KEYCHAIN_ERROR_RC
+
+    _twofa('delete', '--name', name, '--force')
+
+
 def test_delete_nonexistent(name):
     with pytest.raises(subprocess.CalledProcessError) as exc_info:
         _twofa('delete', '--name', name)
@@ -148,6 +176,8 @@ def test_delete_force(test_keychain, name):
     assert exc_info.value.returncode == KEYCHAIN_ERROR_RC
 
     _twofa('delete', '--name', name, '--force')
+
+    assert name not in _twofa('list').stdout.splitlines()
 
 
 def test_list(name):
