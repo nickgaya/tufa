@@ -1,6 +1,7 @@
 """End-to-end tests of the twofa CLI."""
 
 import os
+import sys
 import subprocess
 
 import mintotp
@@ -14,9 +15,10 @@ SECRET_2 = 'BJVNQY3PK2BG2UF6'
 
 def _run(command, input=None):
     kwargs = {'input': input} if input else {'stdin': subprocess.DEVNULL}
-    return subprocess.run(command, stdout=subprocess.PIPE,
-                          stderr=subprocess.PIPE, text=True, check=True,
-                          **kwargs)
+    result = subprocess.run(command, capture_output=True, text=True, **kwargs)
+    print(result.stderr, end='', file=sys.stderr, flush=True)
+    result.check_returncode()
+    return result
 
 
 def _twofa(*args, input=None):
