@@ -458,11 +458,11 @@ def validate_type(type_):
     return type_
 
 
-def validate_secret(input_secret):
+def validate_secret(secret):
     """Validate and normalize a base32 secret from user input."""
     trans = str.maketrans(string.ascii_lowercase, string.ascii_uppercase,
                           '- =')
-    secret = input_secret.translate(trans)
+    secret = secret.translate(trans)
     try:
         decode_secret(secret)
     except (binascii.Error, ValueError) as e:
