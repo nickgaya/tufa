@@ -462,6 +462,8 @@ def validate_secret(secret):
     trans = str.maketrans(string.ascii_lowercase, string.ascii_uppercase,
                           '- =')
     secret = secret.translate(trans)
+    if not secret:
+        raise ValidationError("Secret must be a valid base32-encoded string")
     try:
         decode_secret(secret)
     except (binascii.Error, ValueError) as e:
