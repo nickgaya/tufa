@@ -56,6 +56,8 @@ def test_add_totp():
     otp = result.stdout[:-1]
     assert otp in (totp_pre, totp_post)
 
+    _twofa('delete', '--name', 'test1')
+
 
 def test_add_hotp():
     _twofa('add', '--name', 'test2', '--hotp', input=SECRET)
@@ -67,6 +69,8 @@ def test_add_hotp():
     assert result.stdout == '106795\n'
     result = _twofa('getotp', '--name', 'test2')
     assert result.stdout == '376952\n'
+
+    _twofa('delete', '--name', 'test2')
 
 
 def test_addurl():
@@ -80,3 +84,5 @@ def test_addurl():
     assert result.stdout == '016128\n'
     result = _twofa('getotp', '--name', 'test3')
     assert result.stdout == '738649\n'
+
+    _twofa('delete', '--name', 'test3')
