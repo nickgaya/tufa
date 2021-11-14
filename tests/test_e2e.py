@@ -9,6 +9,7 @@ import pytest
 TEST_DIR = os.path.abspath(os.path.dirname(__file__))
 
 SECRET = 'ORSXG5BAMJ4XIZLT'
+SECRET_2 = 'BJVNQY3PK2BG2UF6'
 
 
 def _run(command, input=None):
@@ -86,3 +87,23 @@ def test_addurl():
     assert result.stdout == '738649\n'
 
     _twofa('delete', '--name', 'test3')
+
+
+def test_delete_force(test_keychain):
+    _twofa('add', '--name', 'test4', '--totp', input=SECRET)
+    _run(['/usr/bin/security', 'delete-generic-password',
+          '-s', 'twofa', '-a', 'test4', test_keychain])
+    with pytest.raises(subprocess.CalledProcessError) as exc_info:
+        _twofa('delete', '--name', 'test4')
+    assert exc_info.value.returncode == 2  # KeychainError
+    _twofa('delete', '--name', 'test4', '--force')
+
+
+def test_add_update():
+    _twofa('add', '--name', 'test5', '--hotp', input=SECRET)
+    _twofa('add', '--name', 'test5', '--totp', '--update', input=SECRET_2)
+
+    result = _twofa('geturl', '--name', 'test5')
+    assert result.stdout == f"otpauth://totp/test5?secret={SECRET_2}\n"
+
+    _twofa('delete', '--name', 'test5')
