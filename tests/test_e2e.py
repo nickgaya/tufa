@@ -93,14 +93,27 @@ def test_delete_force(test_keychain):
     _twofa('add', '--name', 'test4', '--totp', input=SECRET)
     _run(['/usr/bin/security', 'delete-generic-password',
           '-s', 'twofa', '-a', 'test4', test_keychain])
+
     with pytest.raises(subprocess.CalledProcessError) as exc_info:
         _twofa('delete', '--name', 'test4')
-    assert exc_info.value.returncode == 2  # KeychainError
+    assert exc_info.value.returncode == 4  # KeychainError
+
     _twofa('delete', '--name', 'test4', '--force')
 
 
 def test_add_update():
-    _twofa('add', '--name', 'test5', '--hotp', input=SECRET)
+    _twofa('add', '--name', 'test5', '--totp', input=SECRET)
+
+    result = _twofa('geturl', '--name', 'test5')
+    assert result.stdout == f"otpauth://totp/test5?secret={SECRET}\n"
+
+    with pytest.raises(subprocess.CalledProcessError) as exc_info:
+        _twofa('add', '--name', 'test5', '--totp', input=SECRET_2)
+    assert exc_info.value.returncode == 2  # CredentialExistsError
+
+    result = _twofa('geturl', '--name', 'test5')
+    assert result.stdout == f"otpauth://totp/test5?secret={SECRET}\n"
+
     _twofa('add', '--name', 'test5', '--totp', '--update', input=SECRET_2)
 
     result = _twofa('geturl', '--name', 'test5')

@@ -33,18 +33,24 @@ class UserError(TwofaError):
     """Exception type used to indicate user error."""
 
 
-class CredentialExistsError(UserError):
-    """Exception type when the user attempts to add an existing credential."""
-    info = "Use --update to replace existing value."
-
-
 class ValidationError(UserError):
     """Exception type used to indicate invalid user input."""
 
 
+class CredentialExistsError(UserError):
+    """Exception type when the user attempts to add an existing credential."""
+    info = "Use --update to replace existing value."
+    rc = 2
+
+
+class CredentialNotFoundError(UserError):
+    """Exception type when the user references a nonexistent credential."""
+    rc = 3
+
+
 class KeychainError(TwofaError):
     """"Exception type for errors interacting with Mac OS keychain."""
-    rc = 2
+    rc = 4
 
 
 # OTP generation
@@ -289,7 +295,8 @@ class CredentialManager:
         """Get credential metadata and secret."""
         metadata = self.metadata_store.retrieve_metadata(name)
         if not metadata:
-            raise UserError(f"No credential found with name {name!r}")
+            raise CredentialNotFoundError(
+                f"No credential found with name {name!r}")
         secret = self.secret_store.retrieve_secret(
             name, keychain=metadata.keychain)
         return metadata, secret
@@ -333,7 +340,8 @@ class CredentialManager:
         """Delete the given credential."""
         metadata = self.metadata_store.retrieve_metadata(name)
         if not metadata:
-            raise UserError(f"No credential found with name {name!r}")
+            raise CredentialNotFoundError(
+                f"No credential found with name {name!r}")
         try:
             self.secret_store.delete_secret(name, keychain=metadata.keychain)
         except KeychainError as e:
