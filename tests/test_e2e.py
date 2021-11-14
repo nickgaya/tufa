@@ -67,3 +67,16 @@ def test_add_hotp():
     assert result.stdout == '106795\n'
     result = _twofa('getotp', '--name', 'test2')
     assert result.stdout == '376952\n'
+
+
+def test_addurl():
+    url = f"otpauth://hotp/label3?secret={SECRET}&counter=123"
+    _twofa('addurl', '-n', 'test3', input=url)
+
+    result = _twofa('geturl', '--name', 'test3')
+    assert result.stdout == f'{url}\n'
+
+    result = _twofa('getotp', '--name', 'test3')
+    assert result.stdout == '016128\n'
+    result = _twofa('getotp', '--name', 'test3')
+    assert result.stdout == '738649\n'
