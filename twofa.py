@@ -561,6 +561,7 @@ def do_add_command(credential_manager, args):
         **params,
         keychain=args.keychain,
         update=args.update)
+    logger.info("Credential %r added", args.name)
 
 
 def do_addurl_command(credential_manager, args):
@@ -624,6 +625,7 @@ def do_addurl_command(credential_manager, args):
         **params,
         keychain=args.keychain,
         update=args.update)
+    logger.info("Credential %r added", args.name)
 
 
 def do_getotp_command(credential_manager, args):
@@ -639,6 +641,7 @@ def do_geturl_command(credential_manager, args):
 def do_delete_command(credential_manager, args):
     """Perform delete command."""
     credential_manager.delete_credential(args.name, force=args.force)
+    logger.info("Credential %r deleted", args.name)
 
 
 def do_list_command(credential_manager, args):
