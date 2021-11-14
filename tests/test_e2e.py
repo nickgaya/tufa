@@ -46,6 +46,9 @@ def test_keychain():
 def test_add_totp():
     _twofa('add', '--name', 'test1', '--totp', input=SECRET)
 
+    result = _twofa('geturl', '--name', 'test1')
+    assert result.stdout == f"otpauth://totp/test1?secret={SECRET}\n"
+
     totp_pre = mintotp.totp(SECRET)
     result = _twofa('getotp', '--name', 'test1')
     totp_post = mintotp.totp(SECRET)
@@ -56,6 +59,9 @@ def test_add_totp():
 
 def test_add_hotp():
     _twofa('add', '--name', 'test2', '--hotp', input=SECRET)
+
+    result = _twofa('geturl', '--name', 'test2')
+    assert result.stdout == f"otpauth://hotp/test2?secret={SECRET}&counter=0\n"
 
     result = _twofa('getotp', '--name', 'test2')
     assert result.stdout == '106795\n'
