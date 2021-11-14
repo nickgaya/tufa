@@ -46,79 +46,85 @@ def test_keychain():
     _run(['/usr/bin/security', 'delete-keychain', keychain_path])
 
 
-def test_add_totp():
-    _twofa('add', '--name', 'test1', '--totp', input=SECRET)
+@pytest.fixture
+def name(request):
+    return request.node.name
 
-    result = _twofa('geturl', '--name', 'test1')
-    assert result.stdout == f"otpauth://totp/test1?secret={SECRET}\n"
+
+def test_add_totp(name):
+    _twofa('add', '--name', name, '--totp', input=SECRET)
+
+    result = _twofa('geturl', '--name', name)
+    assert result.stdout == f"otpauth://totp/{name}?secret={SECRET}\n"
 
     totp_pre = mintotp.totp(SECRET)
-    result = _twofa('getotp', '--name', 'test1')
+    result = _twofa('getotp', '--name', name)
     totp_post = mintotp.totp(SECRET)
     assert result.stdout.endswith('\n')
     otp = result.stdout[:-1]
     assert otp in (totp_pre, totp_post)
 
-    _twofa('delete', '--name', 'test1')
+    _twofa('delete', '--name', name)
 
 
-def test_add_hotp():
-    _twofa('add', '--name', 'test2', '--hotp', input=SECRET)
+def test_add_hotp(name):
+    _twofa('add', '--name', name, '--hotp', input=SECRET)
 
-    result = _twofa('geturl', '--name', 'test2')
-    assert result.stdout == f"otpauth://hotp/test2?secret={SECRET}&counter=0\n"
+    result = _twofa('geturl', '--name', name)
+    assert result.stdout == \
+        f"otpauth://hotp/{name}?secret={SECRET}&counter=0\n"
 
-    result = _twofa('getotp', '--name', 'test2')
+    result = _twofa('getotp', '--name', name)
     assert result.stdout == '106795\n'
-    result = _twofa('getotp', '--name', 'test2')
+    result = _twofa('getotp', '--name', name)
     assert result.stdout == '376952\n'
 
-    _twofa('delete', '--name', 'test2')
+    _twofa('delete', '--name', name)
 
 
-def test_addurl():
-    url = f"otpauth://hotp/label3?secret={SECRET}&counter=123"
-    _twofa('addurl', '-n', 'test3', input=url)
+def test_addurl(name):
+    url = f"otpauth://hotp/label?secret={SECRET}&counter=123"
+    _twofa('addurl', '-n', name, input=url)
 
-    result = _twofa('geturl', '--name', 'test3')
+    result = _twofa('geturl', '--name', name)
     assert result.stdout == f'{url}\n'
 
-    result = _twofa('getotp', '--name', 'test3')
+    result = _twofa('getotp', '--name', name)
     assert result.stdout == '016128\n'
-    result = _twofa('getotp', '--name', 'test3')
+    result = _twofa('getotp', '--name', name)
     assert result.stdout == '738649\n'
 
-    _twofa('delete', '--name', 'test3')
+    _twofa('delete', '--name', name)
 
 
-def test_delete_force(test_keychain):
-    _twofa('add', '--name', 'test4', '--totp', input=SECRET)
+def test_delete_force(test_keychain, name):
+    _twofa('add', '--name', name, '--totp', input=SECRET)
     _run(['/usr/bin/security', 'delete-generic-password',
-          '-s', 'twofa', '-a', 'test4', test_keychain])
+          '-s', 'twofa', '-a', name, test_keychain])
 
     with pytest.raises(subprocess.CalledProcessError) as exc_info:
-        _twofa('delete', '--name', 'test4')
+        _twofa('delete', '--name', name)
     assert exc_info.value.returncode == 4  # KeychainError
 
-    _twofa('delete', '--name', 'test4', '--force')
+    _twofa('delete', '--name', name, '--force')
 
 
-def test_add_update():
-    _twofa('add', '--name', 'test5', '--totp', input=SECRET)
+def test_add_update(name):
+    _twofa('add', '--name', name, '--totp', input=SECRET)
 
-    result = _twofa('geturl', '--name', 'test5')
-    assert result.stdout == f"otpauth://totp/test5?secret={SECRET}\n"
+    result = _twofa('geturl', '--name', name)
+    assert result.stdout == f"otpauth://totp/{name}?secret={SECRET}\n"
 
     with pytest.raises(subprocess.CalledProcessError) as exc_info:
-        _twofa('add', '--name', 'test5', '--totp', input=SECRET_2)
+        _twofa('add', '--name', name, '--totp', input=SECRET_2)
     assert exc_info.value.returncode == 2  # CredentialExistsError
 
-    result = _twofa('geturl', '--name', 'test5')
-    assert result.stdout == f"otpauth://totp/test5?secret={SECRET}\n"
+    result = _twofa('geturl', '--name', name)
+    assert result.stdout == f"otpauth://totp/{name}?secret={SECRET}\n"
 
-    _twofa('add', '--name', 'test5', '--totp', '--update', input=SECRET_2)
+    _twofa('add', '--name', name, '--totp', '--update', input=SECRET_2)
 
-    result = _twofa('geturl', '--name', 'test5')
-    assert result.stdout == f"otpauth://totp/test5?secret={SECRET_2}\n"
+    result = _twofa('geturl', '--name', name)
+    assert result.stdout == f"otpauth://totp/{name}?secret={SECRET_2}\n"
 
-    _twofa('delete', '--name', 'test5')
+    _twofa('delete', '--name', name)
