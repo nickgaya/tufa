@@ -34,3 +34,5 @@ You can set the following environment variables to configure twofa:
 
 * `TWOFA_DB_PATH`: Path twofa's credential metadata database. The default
   location is `~/.twofa.sqlite3`
+* `TWOFA_DEFAULT_KEYCHAIN`: Keychain to use when adding credentials, if not
+  specified via command-line flags.

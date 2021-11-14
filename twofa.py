@@ -387,6 +387,7 @@ def add_name_arg(parser):
 def add_add_args(parser):
     """Add common arguments for adding credentials to the given subparser."""
     parser.add_argument('--keychain', '-k',
+                        default=os.environ.get('TWOFA_DEFAULT_KEYCHAIN'),
                         help="Keychain in which to store the secret")
     parser.add_argument('--update', '-u', action='store_true',
                         help="Update an existing credential")

@@ -34,17 +34,17 @@ def test_db():
         pass
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope='module', autouse=True)
 def test_keychain():
     keychain_path = f'{TEST_DIR}/test.keychain'
     _run(['/usr/bin/security', 'create-keychain', '-p', 'test', keychain_path])
+    os.environ['TWOFA_DEFAULT_KEYCHAIN'] = keychain_path
     yield keychain_path
     _run(['/usr/bin/security', 'delete-keychain', keychain_path])
 
 
-def test_add_getotp(test_keychain):
-    _twofa('add', '--name', 'test', '--totp', '--keychain', test_keychain,
-           input=SECRET)
+def test_add_getotp():
+    _twofa('add', '--name', 'test', '--totp', input=SECRET)
 
     totp_pre = mintotp.totp(SECRET)
     result = _twofa('getotp', '--name', 'test')
@@ -52,3 +52,7 @@ def test_add_getotp(test_keychain):
     assert result.stdout.endswith('\n')
     otp = result.stdout[:-1]
     assert otp in (totp_pre, totp_post)
+
+
+
+
