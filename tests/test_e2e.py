@@ -3,8 +3,8 @@
 import os
 import subprocess
 
+import mintotp
 import pytest
-
 
 TEST_DIR = os.path.abspath(os.path.dirname(__file__))
 
@@ -45,4 +45,10 @@ def test_keychain():
 def test_add_getotp(test_keychain):
     _twofa('add', '--name', 'test', '--totp', '--keychain', test_keychain,
            input=SECRET)
-    _twofa('getotp', '--name', 'test')
+
+    totp_pre = mintotp.totp(SECRET)
+    result = _twofa('getotp', '--name', 'test')
+    totp_post = mintotp.totp(SECRET)
+    assert result.stdout.endswith('\n')
+    otp = result.stdout[:-1]
+    assert otp in (totp_pre, totp_post)
