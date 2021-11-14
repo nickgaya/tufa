@@ -261,9 +261,16 @@ class CredentialManager:
         # credential.
         self._check_keychain(keychain)
 
-        if not update and self.metadata_store.retrieve_metadata(name):
-            raise CredentialExistsError(
-                f"Found existing credential with name {name!r}.")
+        old_metadata = self.metadata_store.retrieve_metadata(name)
+        if old_metadata:
+            if not update:
+                raise CredentialExistsError(
+                    f"Found existing credential with name {name!r}.")
+            if old_metadata.keychain != keychain:
+                logger.info(
+                    "Deleting existing secret from %s",
+                    old_metadata.keychain or 'default keychain')
+                self.secret_store.delete_secret(name, old_metadata.keychain)
 
         metadata = CredentialMetadata(
             name=name,
