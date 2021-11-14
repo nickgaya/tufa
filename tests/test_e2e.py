@@ -43,16 +43,21 @@ def test_keychain():
     _run(['/usr/bin/security', 'delete-keychain', keychain_path])
 
 
-def test_add_getotp():
-    _twofa('add', '--name', 'test', '--totp', input=SECRET)
+def test_add_totp():
+    _twofa('add', '--name', 'test1', '--totp', input=SECRET)
 
     totp_pre = mintotp.totp(SECRET)
-    result = _twofa('getotp', '--name', 'test')
+    result = _twofa('getotp', '--name', 'test1')
     totp_post = mintotp.totp(SECRET)
     assert result.stdout.endswith('\n')
     otp = result.stdout[:-1]
     assert otp in (totp_pre, totp_post)
 
 
+def test_add_hotp():
+    _twofa('add', '--name', 'test2', '--hotp', input=SECRET)
 
-
+    result = _twofa('getotp', '--name', 'test2')
+    assert result.stdout == '106795\n'
+    result = _twofa('getotp', '--name', 'test2')
+    assert result.stdout == '376952\n'
