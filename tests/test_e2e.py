@@ -128,3 +128,20 @@ def test_add_update(name):
     assert result.stdout == f"otpauth://totp/{name}?secret={SECRET_2}\n"
 
     _twofa('delete', '--name', name)
+
+
+def test_list(name):
+    assert _twofa('list').stdout == ''
+
+    name1 = f'{name}-1'
+    name2 = f'{name}-2'
+
+    _twofa('add', '--name', name1, '--totp', input=SECRET)
+    _twofa('add', '--name', name2, '--hotp', input=SECRET_2)
+
+    assert _twofa('list').stdout.splitlines() == [name1, name2]
+
+    _twofa('delete', '--name', name1)
+    _twofa('delete', '--name', name2)
+
+    assert _twofa('list').stdout == ''
