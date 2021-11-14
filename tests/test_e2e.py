@@ -12,6 +12,10 @@ TEST_DIR = os.path.abspath(os.path.dirname(__file__))
 SECRET = 'ORSXG5BAMJ4XIZLT'
 SECRET_2 = 'BJVNQY3PK2BG2UF6'
 
+CREDENTIAL_EXISTS_RC = 2
+CREDENTIAL_NOT_FOUND_RC = 3
+KEYCHAIN_ERROR_RC = 4
+
 
 def _run(command, input=None):
     kwargs = {'input': input} if input else {'stdin': subprocess.DEVNULL}
@@ -90,7 +94,7 @@ def test_add_update(name):
 
     with pytest.raises(subprocess.CalledProcessError) as exc_info:
         _twofa('add', '--name', name, '--totp', input=SECRET_2)
-    assert exc_info.value.returncode == 2  # CredentialExistsError
+    assert exc_info.value.returncode == CREDENTIAL_EXISTS_RC
 
     result = _twofa('geturl', '--name', name)
     assert result.stdout == f"otpauth://totp/{name}?secret={SECRET}\n"
@@ -118,6 +122,22 @@ def test_addurl(name):
     _twofa('delete', '--name', name)
 
 
+def test_get_nonexistent(name):
+    with pytest.raises(subprocess.CalledProcessError) as exc_info:
+        _twofa('getotp', '--name', name)
+    assert exc_info.value.returncode == CREDENTIAL_NOT_FOUND_RC
+
+    with pytest.raises(subprocess.CalledProcessError) as exc_info:
+        _twofa('geturl', '--name', name)
+    assert exc_info.value.returncode == CREDENTIAL_NOT_FOUND_RC
+
+
+def test_delete_nonexistent(name):
+    with pytest.raises(subprocess.CalledProcessError) as exc_info:
+        _twofa('delete', '--name', name)
+    assert exc_info.value.returncode == CREDENTIAL_NOT_FOUND_RC
+
+
 def test_delete_force(test_keychain, name):
     _twofa('add', '--name', name, '--totp', input=SECRET)
     _run(['/usr/bin/security', 'delete-generic-password',
@@ -125,7 +145,7 @@ def test_delete_force(test_keychain, name):
 
     with pytest.raises(subprocess.CalledProcessError) as exc_info:
         _twofa('delete', '--name', name)
-    assert exc_info.value.returncode == 4  # KeychainError
+    assert exc_info.value.returncode == KEYCHAIN_ERROR_RC
 
     _twofa('delete', '--name', name, '--force')
 
