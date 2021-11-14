@@ -330,13 +330,21 @@ class CredentialManager:
         qs = urllib.parse.urlencode(params, quote_via=urllib.parse.quote)
         return f'otpauth://{metadata.type}/{label}?{qs}'
 
-    def delete_credential(self, name):
+    def delete_credential(self, name, force=False):
         """Delete the given credential."""
         metadata = self.metadata_store.retrieve_metadata(name)
         if not metadata:
             raise UserError(f"No credential found with name {name!r}")
+        try:
+            self.secret_store.delete_secret(name, keychain=metadata.keychain)
+        except KeychainError as e:
+            if force:
+                logger.warning(
+                    "%s", e, exc_info=logger.isEnabledFor(logging.DEBUG))
+            else:
+                e.info = "Use --force to delete metadata anyway"
+                raise
         self.metadata_store.delete_metadata(name)
-        self.secret_store.delete_secret(name, keychain=metadata.keychain)
 
     def get_all_metadata(self):
         """Retrieve metadata for all credentials."""
@@ -429,6 +437,9 @@ def init_geturl_parser(parser):
 def init_delete_parser(parser):
     """Initialize subparser for the delete command."""
     add_name_arg(parser)
+    parser.add_argument('--force', '-f', action='store_true',
+                        help="Delete credential metadata from the db even if "
+                        "deleting the secret from the keychain fails")
 
 
 def init_list_parser(parser):
@@ -627,7 +638,7 @@ def do_geturl_command(credential_manager, args):
 
 def do_delete_command(credential_manager, args):
     """Perform delete command."""
-    credential_manager.delete_credential(args.name)
+    credential_manager.delete_credential(args.name, force=args.force)
 
 
 def do_list_command(credential_manager, args):
