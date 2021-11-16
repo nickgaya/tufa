@@ -16,20 +16,20 @@ import urllib.parse
 from argparse import ArgumentParser
 from collections import namedtuple
 
-logger = logging.getLogger('twofa')
+logger = logging.getLogger('tufa')
 
 _SECURITY = '/usr/bin/security'
 
 
 # Exceptions
 
-class TwofaError(Exception):
+class TufaError(Exception):
     """Base exception type for this script."""
     rc = 1  # Return code for this error
     info = None  # Extra info to log for this error
 
 
-class UserError(TwofaError):
+class UserError(TufaError):
     """Exception type used to indicate user error."""
 
 
@@ -48,7 +48,7 @@ class CredentialNotFoundError(UserError):
     rc = 3
 
 
-class KeychainError(TwofaError):
+class KeychainError(TufaError):
     """"Exception type for errors interacting with Mac OS keychain."""
     rc = 4
 
@@ -115,9 +115,9 @@ class SecretStore:
         args = [
             # The service and account parameters together uniquely identify a
             # keychain item
-            '-s', 'twofa', '-a', name,
+            '-s', 'tufa', '-a', name,
             # Additional display parameters shown in Keychain Access
-            '-l', f'twofa: {name}',
+            '-l', f'tufa: {name}',
             '-D', 'hotp/totp secret',
             # XXX: Passing the secret as an argument is not ideal as it could
             # theoretically be read from the process table, but the security
@@ -138,7 +138,7 @@ class SecretStore:
 
     def retrieve_secret(self, name, keychain=None):
         """Retrieve the secret for the given credential name."""
-        args = ['-s', 'twofa', '-a', name, '-w']
+        args = ['-s', 'tufa', '-a', name, '-w']
         if keychain:
             args.append(keychain)
         result = self._run_command(
@@ -149,7 +149,7 @@ class SecretStore:
 
     def delete_secret(self, name, keychain=None):
         """Delete the secret for the given credential name."""
-        args = ['-s', 'twofa', '-a', name]
+        args = ['-s', 'tufa', '-a', name]
         if keychain:
             args.append(keychain)
         result = self._run_command('delete-generic-password', args)
@@ -179,7 +179,7 @@ class MetadataStore:
 
     def _create_table(self):
         self.connection.execute("""
-            CREATE TABLE IF NOT EXISTS twofa_metadata(
+            CREATE TABLE IF NOT EXISTS tufa_metadata(
                 name TEXT PRIMARY KEY,
                 type TEXT NOT NULL,
                 label TEXT,
@@ -197,7 +197,7 @@ class MetadataStore:
         operation = 'REPLACE' if update else 'INSERT'
         with self.connection:
             self.connection.execute(
-                f"{operation} INTO twofa_metadata (name, type, label, issuer, "
+                f"{operation} INTO tufa_metadata (name, type, label, issuer, "
                 "algorithm, digits, period, counter, keychain) VALUES (?, ?, "
                 "?, ?, ?, ?, ?, ?, ?)", metadata)
 
@@ -205,7 +205,7 @@ class MetadataStore:
         """Retrieve metadata for the given credential."""
         row = self.connection.execute(
             "SELECT name, type, label, issuer, algorithm, digits, period, "
-            "counter, keychain FROM twofa_metadata WHERE name = ?",
+            "counter, keychain FROM tufa_metadata WHERE name = ?",
             (name,)).fetchone()
         return CredentialMetadata(*row) if row else None
 
@@ -213,20 +213,20 @@ class MetadataStore:
         """Retrieve metadata for all credentials."""
         return [CredentialMetadata(*row) for row in self.connection.execute(
             "SELECT name, type, label, issuer, algorithm, digits, period, "
-            "counter, keychain FROM twofa_metadata ORDER BY name")]
+            "counter, keychain FROM tufa_metadata ORDER BY name")]
 
     def increment_hotp_counter(self, name):
         """Increment the counter for the given HOTP credential."""
         with self.connection:
             return self.connection.execute(
-                "UPDATE twofa_metadata SET counter = counter + 1 "
+                "UPDATE tufa_metadata SET counter = counter + 1 "
                 "WHERE name = ?", (name,)).rowcount
 
     def delete_metadata(self, name):
         """Delete metadata for the given credential."""
         with self.connection:
             return self.connection.execute(
-                "DELETE FROM twofa_metadata WHERE name = ?", (name,)).rowcount
+                "DELETE FROM tufa_metadata WHERE name = ?", (name,)).rowcount
 
     def close(self):
         """Close the underlying db connection."""
@@ -395,7 +395,7 @@ def add_name_arg(parser):
 def add_add_args(parser):
     """Add common arguments for adding credentials to the given subparser."""
     parser.add_argument('--keychain', '-k',
-                        default=os.environ.get('TWOFA_DEFAULT_KEYCHAIN'),
+                        default=os.environ.get('TUFA_DEFAULT_KEYCHAIN'),
                         help="Keychain in which to store the secret")
     parser.add_argument('--update', '-u', action='store_true',
                         help="Update an existing credential")
@@ -529,9 +529,9 @@ def validate_period(period):
 def get_db_path(path):
     """Get metadata database path."""
     if not path:
-        path = os.environ.get('TWOFA_DB_PATH')
+        path = os.environ.get('TUFA_DB_PATH')
     if not path:
-        path = os.path.expanduser("~/.twofa.sqlite3")
+        path = os.path.expanduser("~/.tufa.sqlite3")
     logger.debug("Metadata db path: %r", path)
     return path
 
@@ -704,7 +704,7 @@ if __name__ == '__main__':
     init_logging(args)
     try:
         do_command(args)
-    except TwofaError as e:
+    except TufaError as e:
         logger.error("%s", e, exc_info=args.debug)
         if e.info:
             logger.info(e.info)
