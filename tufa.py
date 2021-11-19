@@ -90,6 +90,9 @@ def get_totp(secret, period=None, algorithm=None, digits=None):
 class SecretStore:
     """Class for storing and retrieving secrets in the Mac OS keychain."""
 
+    def __init__(self, service=None):
+        self.service = service or 'tufa'
+
     def _run_command(self, command, args, redact_arg=None, log_stdout=True):
         """Execute a security command."""
         cmd_args = [_SECURITY, command, *args]
@@ -115,9 +118,9 @@ class SecretStore:
         args = [
             # The service and account parameters together uniquely identify a
             # keychain item
-            '-s', 'tufa', '-a', name,
+            '-s', self.service, '-a', name,
             # Additional display parameters shown in Keychain Access
-            '-l', f'tufa: {name}',
+            '-l', f'{self.service}: {name}',
             '-D', 'hotp/totp secret',
             # XXX: Passing the secret as an argument is not ideal as it could
             # theoretically be read from the process table, but the security
@@ -138,7 +141,7 @@ class SecretStore:
 
     def retrieve_secret(self, name, keychain=None):
         """Retrieve the secret for the given credential name."""
-        args = ['-s', 'tufa', '-a', name, '-w']
+        args = ['-s', self.service, '-a', name, '-w']
         if keychain:
             args.append(keychain)
         result = self._run_command(
@@ -149,7 +152,7 @@ class SecretStore:
 
     def delete_secret(self, name, keychain=None):
         """Delete the secret for the given credential name."""
-        args = ['-s', 'tufa', '-a', name]
+        args = ['-s', self.service, '-a', name]
         if keychain:
             args.append(keychain)
         result = self._run_command('delete-generic-password', args)
