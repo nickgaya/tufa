@@ -568,7 +568,7 @@ def do_add_command(credential_manager, args):
         algorithm=validate_algorithm(args.algorithm),
         digits=validate_digits(args.digits),
         **params,
-        keychain=args.keychain,
+        keychain=args.keychain or None,
         update=args.update)
     logger.info("Credential %r added", args.name)
 
@@ -632,7 +632,7 @@ def do_addurl_command(credential_manager, args):
         type_=type_,
         label=label,
         **params,
-        keychain=args.keychain,
+        keychain=args.keychain or None,
         update=args.update)
     logger.info("Credential %r added", args.name)
 
@@ -698,7 +698,7 @@ def init_logging(args):
         logger.setLevel(logging.DEBUG)
 
 
-if __name__ == '__main__':
+def main():
     parser = create_parser()
     args = parser.parse_args()
     init_logging(args)
@@ -712,3 +712,7 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         logger.info("Interrupted", exc_info=args.debug)
         exit(1)
+
+
+if __name__ == '__main__':
+    main()
