@@ -711,11 +711,11 @@ def main():
         logger.error("%s", e, exc_info=args.debug)
         if e.info:
             logger.info(e.info)
-        exit(e.rc)
+        return e.rc
     except KeyboardInterrupt:
         logger.info("Interrupted", exc_info=args.debug)
-        exit(1)
+        return 1
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())
