@@ -26,7 +26,7 @@ def _run(command, input=None):
 
 
 def _tufa(*args, input=None):
-    tufa_command = ['python3', 'tufa.py', *args]
+    tufa_command = ['python3', 'src/tufa.py', *args]
     return _run(tufa_command, input=input)
 
 
