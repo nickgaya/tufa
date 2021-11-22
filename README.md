@@ -5,7 +5,11 @@ keychain.
 
 ## Installation
 
-Use pip to install the package in your desired environment:
+To install the latest released version from PyPI:
+
+    pip install -U tufa
+
+You can also check out the repository and install from source:
 
     pip install -U .
 
