@@ -715,7 +715,3 @@ def main():
     except KeyboardInterrupt:
         logger.info("Interrupted", exc_info=args.debug)
         return 1
-
-
-if __name__ == '__main__':
-    sys.exit(main())
