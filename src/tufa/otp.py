@@ -1,0 +1,37 @@
+"""Implementations of HOTP and TOTP algorithms."""
+
+import base64
+import hmac
+import struct
+import time
+
+
+def decode_secret(secret):
+    """Decode a base32-encoded secret to bytes."""
+    return base64.b32decode(secret + '=' * (-len(secret) % 8))
+
+
+def get_otp(secret, value, algorithm=None, digits=None):
+    """
+    Generate an OTP from the given parameters.
+    :param secret: Secret as a base32-encoded string
+    :param value: Counter value
+    :param algorithm: Digest algorithm to use
+    :param digits: Number of OTP digits to generate
+    """
+    algorithm = algorithm or 'SHA1'
+    digits = digits or 6
+    secret_bytes = decode_secret(secret)
+    counter_bytes = struct.pack('>q', value)
+    hmac_bytes = hmac.digest(secret_bytes, counter_bytes, algorithm)
+    offset = hmac_bytes[19] & 0xf
+    dbc, = struct.unpack_from('>L', hmac_bytes, offset)
+    dbc &= 0x7FFFFFFF
+    return str(dbc)[-digits:].zfill(digits)
+
+
+def get_totp(secret, period=None, algorithm=None, digits=None):
+    """Generate a TOTP with the given parameters at the current time."""
+    period = period or 30
+    value = int(time.time() / period)
+    return get_otp(secret, value, algorithm=algorithm, digits=digits)
