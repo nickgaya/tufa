@@ -41,6 +41,12 @@ def _input_secret(prompt):
         return sys.stdin.read().strip()
 
 
+def _get_keychain(keychain):
+    if keychain is None:
+        keychain = os.environ.get('TUFA_DEFAULT_KEYCHAIN')
+    return keychain or None
+
+
 def _do_add_command(credential_manager, args):
     """Perform add command."""
     params = {}
@@ -65,7 +71,7 @@ def _do_add_command(credential_manager, args):
         algorithm=validate_algorithm(args.algorithm),
         digits=validate_digits(args.digits),
         **params,
-        keychain=args.keychain or None,
+        keychain=_get_keychain(args.keychain),
         update=args.update)
     logger.info("Credential %r added", args.name)
 
@@ -129,7 +135,7 @@ def _do_addurl_command(credential_manager, args):
         type_=type_,
         label=label,
         **params,
-        keychain=args.keychain or None,
+        keychain=_get_keychain(args.keychain),
         update=args.update)
     logger.info("Credential %r added", args.name)
 
