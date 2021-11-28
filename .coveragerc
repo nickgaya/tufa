@@ -1,0 +1,7 @@
+[paths]
+source =
+    src/
+    .tox/*/lib/python*/site-packages/
+
+[coverage:run]
+branch = True
