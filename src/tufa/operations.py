@@ -109,11 +109,16 @@ class CredentialManager:
         }
         for key, value in (('issuer', metadata.issuer),
                            ('algorithm', metadata.algorithm),
-                           ('digits', metadata.digits),
-                           ('period', metadata.period),
-                           ('counter', metadata.counter)):
+                           ('digits', metadata.digits)):
             if value is not None:
                 params[key] = str(value)
+        if metadata.type == 'totp':
+            if metadata.period is not None:
+                params['period'] = str(metadata.period)
+        elif metadata.type == 'hotp':
+            params['counter'] = str(metadata.counter or 0)
+        else:
+            raise ValueError(f"Invalid metadata type: {metadata.type!r}")
         qs = urllib.parse.urlencode(params, quote_via=urllib.parse.quote)
         return f'otpauth://{metadata.type}/{label}?{qs}'
 
