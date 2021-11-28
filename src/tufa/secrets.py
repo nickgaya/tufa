@@ -86,4 +86,5 @@ class SecretStore:
         # keychain actually exists. This command will also unlock the given
         # keychain, prompting the user for a password if necessary.
         result = self._run_command('show-keychain-info', [keychain])
-        return result.returncode == 0
+        if result.returncode != 0:
+            raise KeychainError(f"Unable to access keychain {keychain!r}")

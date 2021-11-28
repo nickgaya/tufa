@@ -26,15 +26,15 @@ class CredentialManager:
     def _check_keychain(self, keychain):
         if not keychain:
             return
-        if self.secret_store.verify_keychain(keychain):
-            return
-        error = KeychainError(f"Unable to access keychain {keychain!r}")
-        if '/' not in keychain and not keychain.endswith('.keychain'):
-            suggestion = f'{keychain}.keychain'
-            if os.path.exists(os.path.expanduser(
-                    f'~/Library/Keychains/{suggestion}-db')):
-                error.info = f"Try --keychain {shlex.quote(suggestion)}"
-        raise error
+        try:
+            self.secret_store.verify_keychain(keychain)
+        except KeychainError as e:
+            if '/' not in keychain and not keychain.endswith('.keychain'):
+                suggestion = f'{keychain}.keychain'
+                if os.path.exists(os.path.expanduser(
+                        f'~/Library/Keychains/{suggestion}-db')):
+                    e.info = f"Try --keychain {shlex.quote(suggestion)}"
+            raise
 
     def add_credential(self, name, type_, secret, label=None, issuer=None,
                        algorithm=None, digits=None, period=None, counter=None,
