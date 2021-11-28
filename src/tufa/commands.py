@@ -95,6 +95,7 @@ def _do_addurl_command(credential_manager, args):
         label = label[1:]
     if not label:
         logger.warning("URL has empty or missing label")
+        label = None
 
     if parts.params:
         logger.warning("Ignoring URL path parameters: %r", parts.params)
@@ -102,7 +103,9 @@ def _do_addurl_command(credential_manager, args):
         logger.warning("Ignoring URL fragment: %r", parts.fragment)
 
     try:
-        query_params = urllib.parse.parse_qs(parts.query, strict_parsing=True)
+        # Need to check for empty qs due to https://bugs.python.org/issue45874
+        query_params = (urllib.parse.parse_qs(parts.query, strict_parsing=True)
+                        if parts.query else {})
     except ValueError as e:
         raise ValidationError("Malformed query parameters") from e
 
