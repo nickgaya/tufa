@@ -1,4 +1,9 @@
-"""Implementations of HOTP and TOTP algorithms."""
+"""
+Implementations of HOTP and TOTP algorithms.
+
+https://www.ietf.org/rfc/rfc4226.txt
+https://www.ietf.org/rfc/rfc6238.txt
+"""
 
 import base64
 import hmac
@@ -24,7 +29,9 @@ def get_otp(secret, value, algorithm=None, digits=None):
     secret_bytes = decode_secret(secret)
     counter_bytes = struct.pack('>q', value)
     hmac_bytes = hmac.digest(secret_bytes, counter_bytes, algorithm)
-    offset = hmac_bytes[19] & 0xf
+    # Use last byte, not 19th byte as specified in RFC-4226
+    # https://www.rfc-editor.org/errata/eid6756
+    offset = hmac_bytes[-1] & 0xf
     dbc, = struct.unpack_from('>L', hmac_bytes, offset)
     dbc &= 0x7FFFFFFF
     return str(dbc)[-digits:].zfill(digits)
