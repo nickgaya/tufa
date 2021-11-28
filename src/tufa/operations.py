@@ -6,7 +6,7 @@ import shlex
 import urllib.parse
 
 from .metadata import CredentialMetadata
-from .otp import get_otp, get_totp
+from .otp import get_hotp, get_totp
 from .exceptions import (
     CredentialExistsError,
     CredentialNotFoundError,
@@ -93,8 +93,8 @@ class CredentialManager:
             return get_totp(secret, metadata.period,
                             metadata.algorithm, metadata.digits)
         elif metadata.type == 'hotp':
-            otp = get_otp(secret, metadata.counter,
-                          metadata.algorithm, metadata.digits)
+            otp = get_hotp(secret, metadata.counter,
+                           metadata.algorithm, metadata.digits)
             self.metadata_store.increment_hotp_counter(name)
             return otp
         else:
